@@ -1,0 +1,23 @@
+{
+  "start_date": "2018-01-01",
+  "end_date": "2020-01-01",
+  "states": {
+  	"default": {
+  		"stock_tickers": "AAPL,GOOG",
+  		"preset_vals": {
+  			"Date Range": "all",
+  			"AAPL": "",
+  			"GOOG": ""
+  		}
+  	},
+  	"state1": {
+  		"stock_tickers": "AAPL,GOOG,TXN",
+  		"preset_vals": {
+  			"Date Range": "all",
+  			"AAPL": "Close",
+  			"GOOG": "Close",
+  			"TXN": "Close"
+  		}
+  	}
+  }
+}

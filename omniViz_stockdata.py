@@ -21,39 +21,49 @@ import pandas as pd
 from sys import platform
 #import os
 #import fnmatch
+import json
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 
-ver = '1.0.0'
+ver = '1.0.3'
 
 # Searchlist class
 # bundle the listbox and searchbox together
 class Searchlist:
         
-    def __init__(self, name):
+    def __init__(self, name, selectmode, immortal=False, statebox=False):
         self.name = name
-        self.frame = name + "frame"
-        self.label = name + "label"
-        self.lbox = name + "lbox"
-        self.sbox = name + "sbox"
-            
-    def make_searchlist(self, selectmode):
         #make frame
         self.frame = tk.Frame(f2)
         self.frame.pack(side='left', padx=(2,2))
+        #make inner frame for label and 'X' buton
+        self.labelframe = tk.Frame(self.frame)
+        self.labelframe.pack(side='top')
         #make label
-        self.label = tk.Label(self.frame, text=self.name, font=myFont)
-        self.label.pack(side='top')
+        self.label = tk.Label(self.labelframe, text=self.name, font=myFont)
+        self.label.pack(side='left')
+        #make 'X' button, though this can be ignored if immortal set to True
+        if not immortal:
+            self.xbutton=tk.Button(self.labelframe, text="X", font=myFont, fg="red", 
+                                   command= lambda: self.remove_stock())
+            self.xbutton.pack(side='left')
         #make lbox
         self.lbox = tk.Listbox(self.frame, width=listBoxWid, height=listBoxHt, 
                                selectmode=selectmode, exportselection=False, font=myFont)
         self.lbox.pack(side='top')
         self.lbox.bind('<<ListboxSelect>>', lambda onclick: self.update_searchbox())
+        #make inner frame for searchbox and select button
+        self.searchframe = tk.Frame(self.frame)
+        self.searchframe.pack(side='top')
         #make searchbox
-        self.sbox = tk.Entry(self.frame, width=5, font=myFont)
-        self.sbox.pack(side='top')
+        self.sbox = tk.Entry(self.searchframe, width=5, font=myFont)
+        self.sbox.pack(side='left')
         self.sbox.bind("<Return>", lambda keypress: self.run_searchbox())
-        
+        if statebox:
+                select_button=tk.Button(self.searchframe, text="Select", font=myFont, 
+                                        command= lambda: select_state(self.lbox))
+                select_button.pack(side='bottom')   
+            
     def organize(self):
         #takes the contents of a listbox
         #orders them and removes all unique values
@@ -72,6 +82,13 @@ class Searchlist:
         
     def selectall(self):
         self.lbox.select_set(0, 'end')
+        
+    def remove_stock(self):
+        global stock_data
+        self.frame.destroy()
+        #clear out rows that contain that stock from the stock_data df
+        stock_data = stock_data[stock_data.Ticker != self.name]
+        print(stock_data.info())
         
     #method to read from the searchbox and select
     #matching items in the corresponding listbox
@@ -124,6 +141,85 @@ class Searchlist:
 
 #functions
 
+#read config file, return it as a dict
+def read_config():
+    try:
+        with open('./config/config.json') as config_file:
+            data = json.load(config_file)
+    except:
+        print("ERROR: config file not found")
+    return data
+
+#get toplevel data from config
+def get_from_config(key):
+    data = read_config()
+    return data.get(key,"ERROR: Value not found")
+    
+def load_from_config():
+    global listchain
+    #clear pre-existing listchain if any
+    clear_listchain()
+    #when load from config button is pressed, start from here
+    data = read_config()
+    statelist_key = "states" #all the states are listed under this key
+    statenames = sorted(data[statelist_key].keys())
+    #make a searchlist, with statebox specific code, to contain all the states
+    state_select = Searchlist("Select State", 'browse', statebox=True)
+    state_select.populate_listbox(statenames)
+
+#once a state is selected, get the tickerlist stored in that state
+#and create a listchain using that list
+def select_state(statebox):
+    global preset_vals
+    data = read_config()
+    #all states are listed under this key
+    statelist_key = "states"
+    #get the specifc state the user selected as a list
+    state = read_listbox(statebox)
+    #under each specific state the ticker list is listed under this key
+    tickerlist_key = "stock_tickers"
+    #given all three keys get the actual list
+    tickerlist = data[statelist_key][state[0]].get(tickerlist_key)
+    #get preset vals now also
+    preset_vals_key = "preset_vals"
+    preset_vals = data[statelist_key][state[0]].get(preset_vals_key)
+    #put the tickerlist into the searchbox and pull stock data
+    ent_browse.delete(0, 'end')
+    ent_browse.insert(0, tickerlist)
+    pull_stock_data()
+    
+def load_preset_vals():
+    #given preset values, put them into their corresponding listchainlinks
+    #with the double for loop strategy you dont even need to have your 
+    #config json in the same order as your tickerlist
+    for key in preset_vals:
+        temp = preset_vals.get(key)
+        for link in listchain:
+            if str(link.name) == str(key):
+                link.sbox.insert(0, temp)
+                link.run_searchbox()
+                break
+        
+def get_unique(column, data):
+     return data[column].unique().tolist()
+
+def read_listbox(lbox):
+    sel = []
+    for index in lbox.curselection():
+        sel.append(lbox.get(index))
+    return sel
+
+def clear_listchain():
+    global stock_data
+    # destroy all widgets from frame
+    for widget in f2.winfo_children():
+       widget.destroy()
+    
+### the "big three" functions below.
+# 1. pull data
+# 2. make a listchain
+# 3. plot the data
+
 # this function takes ticker name(s) as input
 # pulls data from yahoo
 # and returns it as a pandas dataframe
@@ -131,15 +227,17 @@ def pull_stock_data():
     #setup global variables
     global stock_data
     global stock_cols
+    #reset stock_data to empty
     stock_cols = []
     stock_data = pd.DataFrame()
     #setup local variables
-    startdate = '2018-01-01'
-    enddate = '2020-01-01'
+    startdate = get_from_config("start_date")
+    enddate = get_from_config("end_date")
     #handle user input
     userinput = ent_browse.get()
     tickerlist = userinput.split(",")
     for ticker in tickerlist:
+        ticker = ticker.strip() #remove whitespace from front and back of ticker
         #set a unique filepath for that ticker
         filepath = './stock_data/{}_{}_{}.csv'.format(ticker, startdate, enddate)
         #get stock data using yahoo finance api
@@ -158,17 +256,10 @@ def pull_stock_data():
     print(stock_data.info())
     create_listchain(stock_data)
     
-def get_unique(column, data):
-     return data[column].unique().tolist()
-
-def read_listbox(lbox):
-    sel = []
-    for index in lbox.curselection():
-        sel.append(lbox.get(index))
-    return sel
-
 def create_listchain(df):
     global listchain
+    #clear pre-existing listchain if any
+    clear_listchain()
     listchain_names = ['Date Range']
     list_of_stocks = get_unique('Ticker', df)
     for stock in list_of_stocks:
@@ -178,38 +269,47 @@ def create_listchain(df):
     chainlink = 0
     listchain = []
     for link in range(chainlength):
-        link = Searchlist(listchain_names[chainlink])
-        listchain.append(link)
         if first:
-            link.make_searchlist('extended')
+            link = Searchlist(listchain_names[chainlink], 'extended', immortal=True)
+            listchain.append(link)
             link.populate_listbox(list(df['Date']))
             first = False
         else:
-            link.make_searchlist('multiple')
+            link = Searchlist(listchain_names[chainlink], 'multiple')
+            listchain.append(link)
             link.populate_listbox(stock_cols)
         chainlink = chainlink + 1
+    #load preset values
+    load_preset_vals()
             
 def stockplot():
     fig, ax = plt.subplots(ncols=1, figsize=(8.25,3.7), dpi=100)
-    
     x = []
     y = []
-    
     #actual plot code
     #x-axis is always going to be time.
     x_axes = 'Date'
+    #mask dataframe by the dates in the date range
+    date_range = (read_listbox(listchain[0].lbox))
+    mask = stock_data[x_axes].isin(date_range)
+    masked_data = stock_data[mask]
     #y-axis has to plot each user selection for each stock individually
     list_of_stocks = get_unique('Ticker', stock_data)
     chainlink = 1
     for stock in list_of_stocks:
         y_axes = read_listbox(listchain[chainlink].lbox)
-        x = stock_data.loc[stock_data['Ticker'] == stock, x_axes]
+        x = masked_data.loc[masked_data['Ticker'] == stock, x_axes]
         chainlink = chainlink + 1
         for elem in y_axes:
             #y = stock_data[elem]
-            y = stock_data.loc[stock_data['Ticker'] == stock, elem]
+            y = masked_data.loc[masked_data['Ticker'] == stock, elem]
+            #check if log scale is desired for either axis
+            if y_log.get():
+                plt.yscale('log')
+            if x_log.get():
+                plt.xscale('log')
             ax.plot(x, y, '-o', lw=0.25, markersize=2)
-    
+
     #plot design code
     ax.set_xticklabels([])
 
@@ -268,21 +368,56 @@ f3 = tk.Frame(window)
 f3.pack(side='top')
 
 #### frame 1 stuff here:
+
+#frame 1, column order
+ent_browse_col = 0
+ #column 1 is skipped because ent_browse has columnspan = 2
+load_button_col = 2
+load_from_config_button_col = 3
+reset_button_col = 4
+frame_log_options_col = 5
+plot_button_col = 6
+
 # entry box for ticker names
 ent_browse=tk.Entry(f1, font=myFont)
-ent_browse.grid(row=0, column=0, columnspan=2, sticky='EW', padx=(listBoxPadx,listBoxPadx))
+ent_browse.grid(row=0, column=ent_browse_col, columnspan=2, sticky='EW', padx=(listBoxPadx,listBoxPadx))
 ent_browse.bind("<Return>", lambda keypress: pull_stock_data())
 
 # load button to pull stock data from yahoo
 load_button=tk.Button(f1, text="Load", font=myFont, command= lambda: pull_stock_data())
-load_button.grid(row=0, column=3, padx=(2,2))
+load_button.grid(row=0, column=load_button_col, padx=(2,2))
+
+# load button to pull stock data from stocks that are listed 
+# in the the config file, instead of by user input
+load_from_config_button=tk.Button(f1, text="Load Config", font=myFont, command= lambda: load_from_config())
+load_from_config_button.grid(row=0, column=load_from_config_button_col, padx=(2,2))
 
 # plot button
 plot_button=tk.Button(f1, text="Plot", font=myFont, command= lambda: stockplot())
-plot_button.grid(row=0, column=4, padx=(2,2))
+plot_button.grid(row=0, column=plot_button_col, padx=(2,2))
+
+# reset button
+reset_button=tk.Button(f1, text="Reset", font=myFont, command= lambda: clear_listchain())
+reset_button.grid(row=0, column=reset_button_col, padx=(2,2))
+
+#frame_log_options contains the log scale options
+frame_log_options = tk.Frame(f1)
+frame_log_options.grid(row=0, column=frame_log_options_col)
+#label for log scale checkboxes
+loglabel = tk.Label(frame_log_options, text="Use log scale:", font=myFont)
+loglabel.pack(side='top')
+#checkbox to change y-axis to log scale
+y_log = tk.IntVar()
+cb1 = tk.Checkbutton(frame_log_options, text="y-axis", font=myFont, variable=y_log)
+cb1.pack(side='top')
+#checkbox to change x-axis to log scale
+x_log = tk.IntVar()
+cb2 = tk.Checkbutton(frame_log_options, text="x-axis", font=myFont, variable=x_log)
+cb2.pack(side='top')
 
 #### frame 2 stuff here:
- ## frame 2 is generated in the create_listchain() function
+ ## frame 2 contents are generated in the create_listchain() function
 #### frame 3 stuff here:
+ ## frame 3 contents are generated in the stockplot() fuction
 
 window.mainloop()
