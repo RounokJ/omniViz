@@ -22,19 +22,20 @@ from sys import platform
 #import os
 #import fnmatch
 import json
+from tkinter import ttk
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 
-ver = '1.0.3'
+ver = '1.0.6'
 
 # Searchlist class
 # bundle the listbox and searchbox together
 class Searchlist:
         
-    def __init__(self, name, selectmode, immortal=False, statebox=False):
+    def __init__(self, name, parent_frame, selectmode, immortal=False, statebox=False):
         self.name = name
         #make frame
-        self.frame = tk.Frame(f2)
+        self.frame = tk.Frame(parent_frame)
         self.frame.pack(side='left', padx=(2,2))
         #make inner frame for label and 'X' buton
         self.labelframe = tk.Frame(self.frame)
@@ -62,7 +63,11 @@ class Searchlist:
         if statebox:
                 select_button=tk.Button(self.searchframe, text="Select", font=myFont, 
                                         command= lambda: select_state(self.lbox))
-                select_button.pack(side='bottom')   
+                select_button.pack(side='top')   
+                delete_button=tk.Button(self.searchframe, text="Delete", font=myFont, 
+                                        command= lambda: remove_state(self.lbox))
+                delete_button.pack(side='top')   
+                self.lbox.bind("<Return>", lambda keypress: select_state(self.lbox))
             
     def organize(self):
         #takes the contents of a listbox
@@ -85,9 +90,14 @@ class Searchlist:
         
     def remove_stock(self):
         global stock_data
+        global listchain
         self.frame.destroy()
         #clear out rows that contain that stock from the stock_data df
         stock_data = stock_data[stock_data.Ticker != self.name]
+        #clear the removed stock from the listchain as well
+        for link in listchain:
+            if link.name == self.name:
+                listchain.remove(link)
         print(stock_data.info())
         
     #method to read from the searchbox and select
@@ -142,13 +152,21 @@ class Searchlist:
 #functions
 
 #read config file, return it as a dict
-def read_config():
+def read_config(configfilepath = "./config/config.json"):
     try:
-        with open('./config/config.json') as config_file:
+        with open(configfilepath) as config_file:
             data = json.load(config_file)
     except:
         print("ERROR: config file not found")
     return data
+
+#save to config file
+def save_config(new_config, configfilepath = "./config/config.json"):
+    try:
+        with open(configfilepath, 'w') as config_file:
+            json.dump(new_config, config_file, indent=4)
+    except:
+        print("ERROR: could not save to config file")
 
 #get toplevel data from config
 def get_from_config(key):
@@ -164,8 +182,65 @@ def load_from_config():
     statelist_key = "states" #all the states are listed under this key
     statenames = sorted(data[statelist_key].keys())
     #make a searchlist, with statebox specific code, to contain all the states
-    state_select = Searchlist("Select State", 'browse', statebox=True)
+    current_tab = f2[nb.index("current")]
+    state_select = Searchlist("Select State", current_tab, 'browse', statebox=True)
     state_select.populate_listbox(statenames)
+    
+def save_to_config(statename, configfilepath, new_window):  
+    config = read_config(configfilepath)
+    stockticks = []
+    presetvals = []
+    stockticks_string = ""
+    for link in listchain:
+        stockticks.append(link.name)
+        presetvals.append(link.sbox.get())
+    for ticker in stockticks[1:]:
+        stockticks_string += ticker
+        stockticks_string += ","
+    stockticks_string = stockticks_string.rstrip(',')
+    state = {
+    statename: {
+  		"stock_tickers": stockticks_string,
+  		"preset_vals": {
+  			"Date Range": presetvals[0]
+  		}
+  	}}
+    config["states"].update(state)
+    for ticker, vals in zip(stockticks[1:], presetvals[1:]):
+        new_preset = {ticker:vals}
+        config["states"][statename]["preset_vals"].update(new_preset)
+    save_config(config, configfilepath)
+    new_window.destroy()
+
+        
+def prompt_user_to_name_state():
+    #Save ____ to <configfilepath> [SAVE]
+    new_window = tk.Tk()
+    #Label
+    thewordSave = tk.Label(new_window, text="Save", font=myFont)
+    thewordSave.pack(side='left')
+    #Entrybox
+    enterStatename = tk.Entry(new_window, width=5, font=myFont)
+    enterStatename.pack(side='left')
+    enterStatename.bind("<Return>", lambda keypress: save_to_config(enterStatename.get(),
+                                                         configfilepath_entbox.get(), 
+                                                         new_window))
+    #Label
+    thewordTo = tk.Label(new_window, text="to", font=myFont)
+    thewordTo.pack(side='left')
+    #Entrybox
+    configfilepath = "./config/config.json"
+    configfilepath_entbox = tk.Entry(new_window, width=20, font=myFont)
+    configfilepath_entbox.pack(side='left')
+    configfilepath_entbox.insert(0, configfilepath)
+    #Button
+    savebutton=tk.Button(new_window, text="Save", font=myFont, 
+                         command= lambda: save_to_config(enterStatename.get(),
+                                                         configfilepath_entbox.get(), 
+                                                         new_window))
+    savebutton.pack(side='left')
+    new_window.mainloop()
+    
 
 #once a state is selected, get the tickerlist stored in that state
 #and create a listchain using that list
@@ -187,6 +262,16 @@ def select_state(statebox):
     ent_browse.delete(0, 'end')
     ent_browse.insert(0, tickerlist)
     pull_stock_data()
+    
+def remove_state(statebox):
+    data = read_config()
+    #all states are listed under this key
+    statelist_key = "states"
+    #get the specifc state the user selected as a list
+    state = read_listbox(statebox)
+    del data[statelist_key][state[0]]
+    save_config(data)
+    load_from_config()
     
 def load_preset_vals():
     #given preset values, put them into their corresponding listchainlinks
@@ -211,8 +296,9 @@ def read_listbox(lbox):
 
 def clear_listchain():
     global stock_data
+    current_tab = f2[nb.index("current")]
     # destroy all widgets from frame
-    for widget in f2.winfo_children():
+    for widget in current_tab.winfo_children():
        widget.destroy()
     
 ### the "big three" functions below.
@@ -264,18 +350,19 @@ def create_listchain(df):
     list_of_stocks = get_unique('Ticker', df)
     for stock in list_of_stocks:
         listchain_names.append(stock)
-    first = True #this lets us handle the Date Listbox independent of the others
+    first = True #this lets us handle the Date SearchList independent of the others
     chainlength = len(listchain_names)
     chainlink = 0
     listchain = []
+    current_tab = f2[nb.index("current")]
     for link in range(chainlength):
         if first:
-            link = Searchlist(listchain_names[chainlink], 'extended', immortal=True)
+            link = Searchlist(listchain_names[chainlink], current_tab, 'extended', immortal=True)
             listchain.append(link)
             link.populate_listbox(list(df['Date']))
             first = False
         else:
-            link = Searchlist(listchain_names[chainlink], 'multiple')
+            link = Searchlist(listchain_names[chainlink], current_tab, 'multiple')
             listchain.append(link)
             link.populate_listbox(stock_cols)
         chainlink = chainlink + 1
@@ -336,6 +423,10 @@ def callback():
     if messagebox.askokcancel("Quit", "Do you really wish to quit?"):
             window.quit()
 
+def about():
+    messagebox.showinfo("omniViz", 
+                        "omniViz is a general purpose data intake and visualization GUI")
+
 #main/layout
 
 global window
@@ -353,15 +444,53 @@ listBoxHt = 5
 listBoxPadx = int(listBoxWid/5)
 listBoxPady = int(listBoxWid/5)
 
+#first some style stuff is needed, and it seems to work best here
+s = ttk.Style()
+s.configure('TNotebook.Tab', font=myFont)
+
+#menu toolbar here
+menubar = tk.Menu(window)
+file = tk.Menu(menubar, tearoff=0)
+menubar.add_cascade(label='File', menu=file)
+file.add_command(label='Load', command= lambda: pull_stock_data())
+file.add_separator()
+file.add_command(label='Save State', command= lambda: prompt_user_to_name_state())
+file.add_command(label='Load State', command= lambda: load_from_config())
+file.add_separator()
+file.add_command(label='Exit', command=callback)
+
+prefs = tk.Menu(menubar, tearoff = 0) 
+menubar.add_cascade(label ='Preferences', menu=prefs) 
+prefs.add_command(label ='View Settings', command=None) 
+
+help_ = tk.Menu(menubar, tearoff = 0) 
+menubar.add_cascade(label ='Help', menu=help_) 
+help_.add_command(label ='User Guide', command=None) 
+help_.add_separator() 
+help_.add_command(label ='About modViz', command=about)
+
+window.config(menu=menubar)
+
 #### three frame structure:
 #frame 1 contains the browse and load buttons
 f1 = tk.Frame(window)
 f1.master.title('stockViz ver ' + ver)
 f1.pack(side='top')
 #frame 2 contains the listbox chain
+#and is located inside a notebook widget to allow for tabs
+global nb
+nb = ttk.Notebook(window)
+global f2page1
+global f2page2
+f2page1 = ttk.Frame(nb)
+f2page2 = ttk.Frame(nb)
 global f2
-f2 = tk.Frame(window)
-f2.pack(side='top')
+f2 = [f2page1, f2page2]
+
+nb.add(f2page1, text='One')
+nb.add(f2page2, text='Two')
+
+nb.pack(expand=1, fill="both")
 #frame 3 contains the graph
 global f3
 f3 = tk.Frame(window)
@@ -387,6 +516,8 @@ ent_browse.bind("<Return>", lambda keypress: pull_stock_data())
 load_button=tk.Button(f1, text="Load", font=myFont, command= lambda: pull_stock_data())
 load_button.grid(row=0, column=load_button_col, padx=(2,2))
 
+
+## this function can now be found in the file menu under "Load State"
 # load button to pull stock data from stocks that are listed 
 # in the the config file, instead of by user input
 load_from_config_button=tk.Button(f1, text="Load Config", font=myFont, command= lambda: load_from_config())
