@@ -1,9 +1,28 @@
 # omniViz
 general purpose data visualizer 
 
+July 27th Update
+
+modularized code
+
+- main function now calls modules so the code isn't as messy
+- plot functions now go through a plot_handler function, both time series and linear regression plots can be selected at the moment
+
+July 22nd Update
+
+adding license
+
+July 18th Update
+
+Save states implemented
+
+- ability to save states to config added
+- ttk notebook used to add tabs, such that multiple listchains can be uesd in parallel
+- file menubar added to free up button real estate
+
 July 14th Update
 
- New functionality and features
+New functionality and features
 
 -reset button added, clears entire listchain
 -close, aka 'x' buttons to remove links from listchain
