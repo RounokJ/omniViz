@@ -1,6 +1,8 @@
 {
-    "start_date": "2018-01-01",
+    "start_date": "2018-01-02",
     "end_date": "2020-01-01",
+    "default_intake_method": "yf_stock",
+    "default_plot_type": "time series",
     "states": {
         "default": {
             "stock_tickers": "AAPL,GOOG",
@@ -56,7 +58,7 @@
         "state3": {
             "stock_tickers": "AAPL,TXN",
             "preset_vals": {
-                "Date Range": "2018-01-02 2018-01-03 2018-01-04 2018-01-05",
+                "Date Range": "all",
                 "AAPL": "Close",
                 "TXN": "Close"
             }
@@ -69,6 +71,19 @@
                 "TXN": "Open",
                 "NFLX": "Open",
                 "DIS": "Open"
+            }
+        },
+        "demo": {
+            "stock_tickers": "TXN,VOO,AAPL,GOOG,ADI,WFC,XOM",
+            "preset_vals": {
+                "Date Range": "all",
+                "TXN": "Close",
+                "VOO": "Close",
+                "AAPL": "Close",
+                "GOOG": "Close",
+                "ADI": "Close",
+                "WFC": "Close",
+                "XOM": "Close"
             }
         }
     }
