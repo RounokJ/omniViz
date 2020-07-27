@@ -262,5 +262,5 @@ def callback(window):
 
 def about():
     messagebox.showinfo("omniViz", 
-                        "omniViz is a general purpose data intake and visualization GUI")
+                        "omniViz is a general purpose data intake and visualization GUI. \nCopyright (c) 2020 Rounok Joardar")
     
